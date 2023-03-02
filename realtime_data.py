@@ -1,7 +1,8 @@
 import datetime
+import random
 from ib_insync import *
 
-
+print('tiity fuck')
 client_id = random.randint(1,99)
 ib = IB()
 ib.connect('127.0.0.1', 7497, clientId=client_id)
@@ -27,6 +28,7 @@ barsList.append(bars)
 dt = bars[0].date
 print(dt)
 n = 25
+sl = 67
 parent = MarketOrder("BUY", n, orderId=ib.client.getReqId(), transmit=True, tif="GTC", )
 stopLoss = StopOrder("SELL", n, sl, orderId=ib.client.getReqId(), transmit=True, parentId=parent.orderId, tif="GTC", )
 trade = ib.placeOrder(contract, parent)

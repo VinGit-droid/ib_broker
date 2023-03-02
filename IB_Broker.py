@@ -1,20 +1,25 @@
+#-------------------------------------------Importing Libraries------------------------------
+
 import random
 import datetime
 from ib_insync import *
-from ibapi.client import EClient
-from ibapi.wrapper import EWrapper
 import pandas as pd
 import numpy as np
 from IPython.display import clear_output
-#import schedule
 import time
 import sys
 import datetime as dt
 from datetime import datetime 
+#import schedule
 
-################################################
+
+###############################################################################################
+
+#---------------------------------------Creating a IB connection-------------------------------
 
 def create_connection(ticker , timeframe):
+    
+    '''Takes ticker and timeframe to create a IB connection and returns a dataframe'''
     
     global contract
     tkr = ticker
@@ -25,35 +30,34 @@ def create_connection(ticker , timeframe):
     
     contract = Stock(tkr, 'SMART', 'USD')
     
-    #ib.reqContractDetails(contract)
-    #bars = ib.reqMktData(contract, genericTickList='', snapshot=False, regulatorySnapshot=False)
-    #bars = ib.reqRealTimeBars(contract, 5, 'TRADES', False)
-    #bars = ib.reqHistoricalData(contract, endDateTime='', durationStr='5 D', barSizeSetting=timeframe, 
-    #                       whatToShow='MIDPOINT', useRTH=True, formatDate=2, keepUpToDate=True)
-    
     dt = ''
     barsList = []
-    bars = ib.reqHistoricalData(contract, endDateTime=dt, durationStr='3 D', barSizeSetting='1 min', whatToShow='TRADES', useRTH=True, formatDate=1, keepUpToDate=True)
+    bars = ib.reqHistoricalData(contract, endDateTime=dt, durationStr='3 D', barSizeSetting='1 min', 
+                                whatToShow='TRADES', useRTH=True, formatDate=1, keepUpToDate=True)
 
     barsList.append(bars)
     dt = bars[0].date
     print(dt)
 
-#--------------------------------------------------Save data to CSV file------------------------------------
+#------Save data to CSV file---------------
 
     allBars = [b for bars in reversed(barsList) for b in bars]
     df = util.df(allBars)
     df['my_datetime'] = df['date'] - pd.Timedelta(hours=1, minutes=0, seconds=0)
     ib.disconnect()
+    
     df.to_csv('C:/Users/XaoGo/Desktop/IBK Codes/log_files/' + tkr + '_raw_data.csv')
     return df
 
 
-#----------------------------------------Buy-Sell------------------------------------
+#---------------------------------------------Buy-Sell-----------------------------------------
 
 def create_buy_sell_signal(ticker, test):
-    '''Creates new columns for long and short trade flags and a column signal where to trade and not to trade. It tells if time is right to either buy or sell'''
-    #test = pd.read_csv('test.csv')
+    
+    '''Takes ticker and a raw data as input and Creates new columns for long and short trade flags 
+       and a column signal where to trade and not to trade. 
+       It tells if time is right to either buy or sell'''
+       
     tkr = ticker
     test['symbol'] = tkr
     test['date']= pd.to_datetime(test['date'])
@@ -62,7 +66,8 @@ def create_buy_sell_signal(ticker, test):
     test['prev_close'] = test['close'].shift(1)
     test = test.tail(7)
     
-    # Generate buy and sell signal for price increase and decrease respectively. And create consolidated 'signal' column by addition of both buy and sell signals
+    # Generate buy and sell signal for price increase and decrease respectively. 
+    # And create consolidated 'signal' column by addition of both buy and sell signals
     
     test['long_signal'] = np.where(test['close'] < test['prev_close'], 1, 0)
     test.reset_index(inplace=True)
@@ -74,9 +79,7 @@ def create_buy_sell_signal(ticker, test):
             h = i-1
             if ( (test.loc[i, 'long_signal'] == 0) & (test.loc[h, 'long_signal'] == 0) ):
                 test.loc[i,'short_signal'] = -1
-
             else:
-
                 test.loc[i,'short_signal'] = 0
 
     test['signal'] = test['short_signal'] + test['long_signal']
@@ -97,14 +100,17 @@ def create_buy_sell_signal(ticker, test):
     test.loc[0,'BUY_SELL'] = np.where(test.loc[0, 'long_signal'] == 1, 'Buy', 0 )
     test['my_datetime'] = test['date'] - pd.Timedelta(hours=1, minutes=0, seconds=0)
     test = test[['date','open','symbol','close','prev_close','BUY_SELL','my_datetime']]
+    
     test.to_csv('C:/Users/XaoGo/Desktop/IBK Codes/log_files/' + tkr + '_buy_sell_flags.csv')
-
     return test
 
 #---------------------------------------QUANTITY AND PRICE--------------------------------
 
 def generate_buy_quantity(test,tkr):
-    '''Uses the data generated from buy_sell(test) and decides the buy quantity as to how many shares to buy or sell. Returns as dataframe with trade_no and BUY_SELL'''
+    
+    '''Uses the data generated from buy_sell(test) and decides the buy quantity 
+       as to how many shares to buy or sell. Returns as dataframe with trade_no and BUY_SELL'''
+       
     test = create_buy_sell_signal(ticker = tkr, test= test)
     test = test.tail(7)
     test['Buy_Qty'] = 0
@@ -125,11 +131,24 @@ def generate_buy_quantity(test,tkr):
             n = 1
             t += 1
             continue
+        
     test.to_csv('C:/Users/XaoGo/Desktop/IBK Codes/log_files/' + tkr + '_buy_sell_quantity.csv')
     return test
 
 def calculate_total_price(ticker, test):
-    '''Uses data generated fro phase_1(test) and decides buy quanity and sell quantity and total price to buy that share or shares'''
+    
+    '''Uses the data generated from buy_sell(test) and decides the buy quantity 
+       as to how many shares to buy or sell. Returns as dataframe with trade_no and BUY_SELL'''
+       
+    test = create_buy_sell_signal(ticker = ticker, test= test)
+    test = test.tail(7)
+    test['Buy_Qty'] = 0
+    n = 1
+    t = 1
+    
+    '''Uses data generated fro phase_1(test) and decides buy quanity 
+       and sell quantity and total price to buy that share or shares'''
+       
     test = generate_buy_quantity(test, tkr=ticker)
     test['Trade_No'] = test['Trade_No'].fillna(0)
     test["Trade_No"] = test["Trade_No"].astype(int)
@@ -137,7 +156,6 @@ def calculate_total_price(ticker, test):
     test['Sell_Qty'] = test.groupby(['Trade_No'])['Buy_Qty'].transform('sum')
     
     for i,row in test.iterrows():
-        
         print(i)
         clear_output(wait=True)
         
@@ -152,6 +170,7 @@ def calculate_total_price(ticker, test):
         else:
             
             test.loc[i,'Quantity'] = 0
+            
     tkr = ticker
     test['symbol'] = tkr
     test = test[['date','symbol','open','close','prev_close','Trade_No','BUY_SELL','Quantity']]
@@ -159,17 +178,18 @@ def calculate_total_price(ticker, test):
     test["Quantity"] = test["Quantity"].astype(int)
     test["BUY_SELL"] = test["BUY_SELL"].astype(str)
     test['Total_Price'] = test.groupby(['Trade_No','BUY_SELL'])['Price'].transform('sum')
+    
     test.to_csv('C:/Users/XaoGo/Desktop/IBK Codes/log_files/' + tkr + '_current_price_data.csv')
-
     return test
 
 
 #-------------------------------------------------IB TRADER--------------------------------------------------
 
 def IB_Trader(ticker, test):
+    
     '''Uses last row from test dataset and is signal is Buy it buys the quantity indicated, 
-    specifies the trade number and price for that particular deal. Submits the order based on Buy or Sell value. 
-    Generates a new dataset for evry trade placed and saves it as symbol+_trade.csv'''
+       specifies the trade number and price for that particular deal. Submits the order based on Buy or Sell value. 
+       Generates a new dataset for evry trade placed and saves it as symbol+_trade.csv'''
     
     final = pd.DataFrame()
     test = test.tail(1)
@@ -182,8 +202,6 @@ def IB_Trader(ticker, test):
     contract = Stock(ticker, 'SMART', 'USD')
 
     for i, row in test.iterrows():
-        
-        print(i)
         global n
         
         if test.loc[i,'BUY_SELL'] == 'Buy':
@@ -199,7 +217,6 @@ def IB_Trader(ticker, test):
             print('Buy for Trade Number',Trade_No)
             print('Buy Quantity',n)
             print('Current Price is',Current_Price)
-            print('Total_Price for this trade is ',Total_Price)
 
             close = test.loc[i,'close']
             sym = str(test.loc[i,'symbol'])
@@ -207,7 +224,6 @@ def IB_Trader(ticker, test):
             bal = check_balance()
             
             if Total_Price < bal:
-                print('tot p', Total_Price)
                 print('Total_Price for this trade is ', Total_Price)
                 remaining_bal = bal - Total_Price
                 m = n * 5
@@ -224,7 +240,7 @@ def IB_Trader(ticker, test):
                     
                     contract = Stock(ticker, 'SMART', 'USD')
                     #parent = MarketOrder("BUY", n, orderId=ib.client.getReqId(), transmit=True, tif="GTC", )
-                    s#topLoss = StopOrder("SELL", n, sl, orderId=ib.client.getReqId(), transmit=True, parentId=parent.orderId, tif="GTC", )
+                    #topLoss = StopOrder("SELL", n, sl, orderId=ib.client.getReqId(), transmit=True, parentId=parent.orderId, tif="GTC", )
                     #trade = ib.placeOrder(contract, parent)
                     #ib.sleep(2)
                     #trade = ib.placeOrder(contract, stopLoss)
@@ -280,12 +296,14 @@ def IB_Trader(ticker, test):
 
             print('*******************************************')
             print('*********Neither Buy nor Sell**************')
-            #final = final.append(test)
             final = pd.concat([final,test])
 
     final.to_csv('C:/Users/XaoGo/Desktop/IBK Codes/log_files/' + sym+'_final_trades.csv')
 
 def close_all_positions():
+    
+    '''Closes all active positions when called.'''
+    
     client_id = random.randint(1,99)
     ib = IB()
     ib.connect('127.0.0.1', 7497, clientId=client_id)
@@ -307,6 +325,9 @@ def close_all_positions():
 
 
 def check_balance():
+    
+    '''Checks available funds'''
+    
     client_id = random.randint(1,99)
     ib = IB()
     ib.connect('127.0.0.1', 7497, clientId=client_id)
